@@ -1,7 +1,7 @@
 "use client";
 
 import { useUser } from "@clerk/nextjs";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
@@ -13,76 +13,51 @@ export default function ChatLayout({
   children: React.ReactNode;
 }) {
   const { user, isLoaded } = useUser();
+  const [isUserStored, setIsUserStored] = useState(false);
 
   const storeUser = useMutation(api.users.store);
   const updateOnlineStatus = useMutation(api.users.updateOnlineStatus);
 
-  const currentUser = useQuery(
-    api.users.getCurrentUser,
-    user?.id ? { clerkId: user.id } : "skip"
-  );
-
-  // Store user in Convex
+  // Store user FIRST
   useEffect(() => {
     if (!user) return;
 
-    storeUser({
-      clerkId: user.id,
-      name: user.fullName || user.firstName || "User",
-      email: user.emailAddresses[0]?.emailAddress || "",
-      imageUrl: user.imageUrl,
-    });
+    const store = async () => {
+      await storeUser({
+        clerkId: user.id,
+        name: user.fullName || user.firstName || "User",
+        email: user.emailAddresses[0]?.emailAddress || "",
+        imageUrl: user.imageUrl,
+      });
+      setIsUserStored(true);
+    };
+
+    store();
   }, [user, storeUser]);
+
+  // Only run query AFTER user is stored
+  const currentUser = useQuery(
+    api.users.getCurrentUser,
+    user?.id && isUserStored ? { clerkId: user.id } : "skip"
+  );
 
   // Online status
   useEffect(() => {
     if (!currentUser) return;
 
-    updateOnlineStatus({ userId: currentUser._id, isOnline: true });
+    updateOnlineStatus({ userId: currentUser!._id, isOnline: true });
 
     return () => {
-      updateOnlineStatus({ userId: currentUser._id, isOnline: false });
+      updateOnlineStatus({ userId: currentUser!._id, isOnline: false });
     };
   }, [currentUser, updateOnlineStatus]);
 
-  // Tab visibility
-  useEffect(() => {
-    if (!currentUser) return;
+  if (!isLoaded) return null;
 
-    const handleVisibilityChange = () => {
-      updateOnlineStatus({
-        userId: currentUser._id,
-        isOnline: !document.hidden,
-      });
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [currentUser, updateOnlineStatus]);
-
-  // 🔥 FIXED LOADING LOGIC
-
-  // Clerk still loading
-  if (!isLoaded) {
-    return null;
-  }
-
-  // Convex query still loading
-  if (currentUser === undefined) {
+  if (!isUserStored || currentUser === undefined) {
     return (
       <div className="flex h-screen items-center justify-center">
         Loading...
-      </div>
-    );
-  }
-
-  // User not yet stored → wait
-  if (currentUser === null) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        Setting up user...
       </div>
     );
   }
@@ -91,7 +66,7 @@ export default function ChatLayout({
     <div className="flex h-screen flex-col">
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        <ConversationSidebar currentUserId={currentUser._id} />
+        <ConversationSidebar currentUserId={currentUser!._id} />
         <main className="flex-1">{children}</main>
       </div>
     </div>
