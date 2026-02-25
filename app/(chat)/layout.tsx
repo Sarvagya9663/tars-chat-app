@@ -12,47 +12,48 @@ export default function ChatLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
+
   const storeUser = useMutation(api.users.store);
   const updateOnlineStatus = useMutation(api.users.updateOnlineStatus);
-  
+
   const currentUser = useQuery(
     api.users.getCurrentUser,
     user?.id ? { clerkId: user.id } : "skip"
   );
 
-  // Store/update user in Convex when they sign in
+  // Store user in Convex
   useEffect(() => {
-    if (user) {
-      storeUser({
-        clerkId: user.id,
-        name: user.fullName || user.firstName || "User",
-        email: user.emailAddresses[0]?.emailAddress || "",
-        imageUrl: user.imageUrl,
-      });
-    }
+    if (!user) return;
+
+    storeUser({
+      clerkId: user.id,
+      name: user.fullName || user.firstName || "User",
+      email: user.emailAddresses[0]?.emailAddress || "",
+      imageUrl: user.imageUrl,
+    });
   }, [user, storeUser]);
 
-  // Update online status
+  // Online status
   useEffect(() => {
     if (!currentUser) return;
 
-    // Set online on mount
     updateOnlineStatus({ userId: currentUser._id, isOnline: true });
 
-    // Set offline on unmount
     return () => {
       updateOnlineStatus({ userId: currentUser._id, isOnline: false });
     };
   }, [currentUser, updateOnlineStatus]);
 
-  // Handle page visibility (tab switching)
+  // Tab visibility
   useEffect(() => {
     if (!currentUser) return;
 
     const handleVisibilityChange = () => {
-      const isOnline = !document.hidden;
-      updateOnlineStatus({ userId: currentUser._id, isOnline });
+      updateOnlineStatus({
+        userId: currentUser._id,
+        isOnline: !document.hidden,
+      });
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -61,13 +62,27 @@ export default function ChatLayout({
     };
   }, [currentUser, updateOnlineStatus]);
 
-  if (!currentUser) {
+  // 🔥 FIXED LOADING LOGIC
+
+  // Clerk still loading
+  if (!isLoaded) {
+    return null;
+  }
+
+  // Convex query still loading
+  if (currentUser === undefined) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent motion-reduce:animate-[spin_1.5s_linear_infinite]" />
-          <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
-        </div>
+        Loading...
+      </div>
+    );
+  }
+
+  // User not yet stored → wait
+  if (currentUser === null) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        Setting up user...
       </div>
     );
   }
